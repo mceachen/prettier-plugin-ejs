@@ -28,9 +28,9 @@
     "format": "prettier --ignore-path=.gitignore --plugin=./index.js --write ."
   },
   "devDependencies": {
-    "prettier": "^2.8.8"
+    "prettier": "^3"
   },
   "peerDependencies": {
-    "prettier": "2.x - 3.x"
+    "prettier": "3.x"
   }
 }

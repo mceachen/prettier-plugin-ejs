@@ -3,46 +3,63 @@
  * Licensed under the MIT License
  */
 
-const { parsers } = require("prettier/parser-html");
+// Prettier 3.x moved parsers to plugins directory
+const { parsers } = require("prettier/plugins/html");
 
-// Hide EJS from Prettier's HTML parser by replacing < and > with control chars.
-// Prettier v3 rejects <! inside attributes, so we use \x01 and \x02 instead.
+// Store EJS snippets for restoration after formatting
+// Key: placeholder string, Value: original EJS
+const ejsMap = new Map();
+
+// Control char delimiters - invisible, won't appear in normal HTML
+// "\x010\x02" = 3 chars, fits shortest EJS like "<% %>" (5 chars)
+const START = "\x01";
+const END = "\x02";
+
+// Create a placeholder that's the same length as the original EJS
+function createPlaceholder(ejsContent, index) {
+  const prefix = `${START}${index}${END}`;
+  const targetLength = ejsContent.length;
+
+  if (prefix.length >= targetLength) {
+    // Placeholder is already long enough (or longer)
+    return prefix;
+  }
+
+  // Pad with underscores to match original length
+  return prefix.padEnd(targetLength, "_");
+}
 
 function ejsToPlaceholder(text) {
-  // Preserve textarea/title/script content unchanged
-  const preserved = [];
-  text = text.replace(
-    /<(textarea|title|script)(?:\s[^>]*)?>[\s\S]*?<\/\1>/gi,
-    (match) => {
-      preserved.push(match);
-      return "\x00".repeat(match.length);
-    }
-  );
+  ejsMap.clear();
+  let index = 0;
 
-  // <%...%> -> \x01%...%\x02 (skip EJS containing > to avoid breaking attrs)
-  text = text.replace(/<(%[^>]*%)>/g, `\x01$1\x02`);
-
-  let i = 0;
-  text = text.replace(/\x00+/g, () => preserved[i++]);
-  return text;
+  return text.replace(/<%[\s\S]*?%>/g, (match) => {
+    const placeholder = createPlaceholder(match, index++);
+    ejsMap.set(placeholder, match);
+    return placeholder;
+  });
 }
 
 function restoreEjs(str) {
   if (typeof str !== "string") return str;
-  return str.replace(/\x01%/g, "<%").replace(/%\x02/g, "%>");
+  // Replace all placeholders with their original EJS
+  for (const [placeholder, original] of ejsMap) {
+    str = str.split(placeholder).join(original);
+  }
+  return str;
 }
 
 function restoreEjsInAst(node) {
   if (!node || typeof node !== "object") return;
 
-  if (node.value) {
+  if (node.value != null) {
     node.value = restoreEjs(node.value);
   }
 
   if (node.attrs) {
     for (const attr of node.attrs) {
-      attr.name = restoreEjs(attr.name);
-      attr.value = restoreEjs(attr.value);
+      if (attr.name != null) attr.name = restoreEjs(attr.name);
+      if (attr.value != null) attr.value = restoreEjs(attr.value);
     }
   }
 
